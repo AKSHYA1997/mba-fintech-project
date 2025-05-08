@@ -2,7 +2,7 @@ To run the project on your system:
 
 ## Step 1: Clone the project
 ```
-git clone
+git clone https://github.com/AKSHYA1997/mba-fintech-project.git
 ```
 
 ## Step 2: Run the Daml Blockchain project using the following command
