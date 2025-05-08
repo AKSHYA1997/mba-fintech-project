@@ -1,0 +1,11 @@
+sdk-version: 2.10.0
+name: mba-fintech-project
+source: daml
+version: 1.0.0
+dependencies:
+  - daml-prim
+  - daml-stdlib
+  - daml-script
+init-script: Depository:testWorkflow
+navigator-options:
+  - --feature-user-management=false

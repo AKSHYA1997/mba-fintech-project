@@ -1,0 +1,172 @@
+module Depository where
+
+import Daml.Script
+
+-- Parties involved:
+-- Issuer, Investor, Broker, Custodian, Registry (CSD)
+
+-- Issued Security Template
+template Security
+  with
+    issuer    : Party
+    registry  : Party
+    id        : Text
+    quantity  : Int
+  where
+    signatory issuer, registry
+
+    nonconsuming choice Issue : ContractId RegistryEntry
+        with
+          toCustodian : Party
+          toInvestor  : Party
+          units       : Int
+        controller issuer   
+        do
+          assertMsg "Invalid quantity" (units <= quantity)
+          create RegistryEntry
+            with
+              registry
+              securityId = id
+              investor = toInvestor
+              custodian = toCustodian
+              units
+
+-- Registry Entry managed by CSD
+template RegistryEntry
+  with
+    registry    : Party
+    securityId  : Text
+    investor    : Party
+    custodian   : Party
+    units       : Int
+  where
+    signatory registry
+    observer investor, custodian
+
+-- Investor initiates purchase via a Broker
+template TradeOrder
+  with
+    investor    : Party
+    broker      : Party
+    custodian   : Party
+    registry    : Party
+    securityId  : Text
+    units       : Int
+  where
+    signatory investor
+    observer broker
+
+    choice Accept : ContractId TradeExecution
+        controller broker   
+        do
+          create TradeExecution with ..
+
+-- Broker executes and creates post-trade instruction
+template TradeExecution
+  with
+    investor    : Party
+    broker      : Party
+    custodian   : Party
+    registry    : Party
+    securityId  : Text
+    units       : Int
+  where
+    signatory broker
+    observer investor, custodian
+
+    choice Confirm : ContractId Clearance
+        controller custodian   
+        do
+          create Clearance with ..
+
+-- Custodian sends to Registry for clearance
+template Clearance
+  with
+    investor    : Party
+    custodian   : Party
+    registry    : Party
+    securityId  : Text
+    units       : Int
+  where
+    signatory custodian
+    observer registry, investor
+
+    choice Settle : ContractId Holding
+        controller registry   
+        do
+          create Holding with ..
+
+-- Final Holding
+template Holding
+  with
+    investor    : Party
+    custodian   : Party
+    registry    : Party
+    securityId  : Text
+    units       : Int
+  where
+    signatory custodian
+    observer investor, registry
+
+testWorkflow : Script ()
+testWorkflow = script do
+
+  -- Step 1: Setup parties: Issuer, Investor, Broker, Custodian, Registry
+  issuer <- allocatePartyWithHint "Issuer" (PartyIdHint "Issuer")
+  investor <- allocatePartyWithHint "Investor" (PartyIdHint "Investor")
+  broker <- allocatePartyWithHint "Broker" (PartyIdHint "Broker")
+  custodian <- allocatePartyWithHint "Custodian" (PartyIdHint "Custodian")
+  registry <- allocatePartyWithHint "Registry" (PartyIdHint "Registry")
+
+  issuerId <- validateUserId "issuer"
+  investorId <- validateUserId "investor"
+  brokerId <- validateUserId "broker"
+  custodianId <- validateUserId "custodian"
+  registryId <- validateUserId "registry"
+
+  createUser (User issuerId (Some issuer)) [CanActAs issuer]
+  createUser (User investorId (Some investor)) [CanActAs investor]
+  createUser (User brokerId (Some broker)) [CanActAs broker]
+  createUser (User custodianId (Some custodian)) [CanActAs custodian]
+  createUser (User registryId (Some registry)) [CanActAs registry]
+
+  -- Step 2: Issuer issues a security
+  securityCid <- submitMulti [issuer, registry] [] do
+    createCmd Security with
+      issuer
+      registry
+      id = "SEC123"
+      quantity = 1000
+
+  registryEntryCid <- submit issuer do
+    exerciseCmd securityCid Issue with
+      toCustodian = custodian
+      toInvestor = investor
+      units = 500
+
+  -- Step 3: Investor places a trade order via broker
+  tradeOrderCid <- submit investor do
+    createCmd TradeOrder with
+      investor
+      broker
+      custodian
+      registry
+      securityId = "SEC123"
+      units = 500
+
+  tradeExecutionCid <- submit broker do
+    exerciseCmd tradeOrderCid Accept with {}
+
+  -- Step 4: Broker confirms trade execution with custodian
+  clearanceCid <- submit custodian do
+    exerciseCmd tradeExecutionCid Confirm with {}
+
+  -- Step 5: Custodian settles the trade with registry
+  holdingCid <- submit registry do
+    exerciseCmd clearanceCid Settle with {}
+
+  -- Step 6: Verify final holding
+  Some holding <- queryContractId @Holding investor holdingCid
+  assert (holding.units == 500)
+  assert (holding.securityId == "SEC123")
+  return ()

@@ -1,0 +1,2 @@
+2025-05-08 21:14:19,944 [main] INFO  c.d.c.e.CommunityEnvironment tid:3145ff2d1e5ba3501f7143d47b320b9d - Automatically starting all instances
+2025-05-08 21:14:20,270 [main] ERROR c.d.c.e.CommunityEnvironment tid:3145ff2d1e5ba3501f7143d47b320b9d - Failed to start local: Failed to bind to address /127.0.0.1:6868
